@@ -3,7 +3,7 @@
 ![R](https://img.shields.io/badge/R-4.3%2B-blue?logo=r)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Analysis](https://img.shields.io/badge/Analysis-Bayesian%20MCMC-purple)
-[![Check Analysis](https://github.com/samkoscelny/spanish-wine-bayesian/workflows/Check%20Analysis/badge.svg)](https://github.com/samkoscelny/spanish-wine-bayesian/actions)
+[![Check Analysis](https://github.com/sam-kos41/spanish-wine-bayesian/workflows/Check%20Analysis/badge.svg)](https://github.com/sam-kos41/spanish-wine-bayesian/actions)
 
 A statistical comparison of critic scores across five major Spanish wine regions using Bayesian hierarchical modeling and MCMC methods.
 

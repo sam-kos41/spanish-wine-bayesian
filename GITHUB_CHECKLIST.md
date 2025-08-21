@@ -33,7 +33,7 @@
    git init
    
    # Add remote
-   git remote add origin https://github.com/YOUR_USERNAME/spanish-wine-bayesian.git
+   git remote add origin https://github.com/sam-kos41/spanish-wine-bayesian.git
    ```
 
 2. **Initial Commit**
