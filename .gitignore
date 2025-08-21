@@ -1,0 +1,66 @@
+# R specific
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+*-Ex.R
+*.Rproj
+.Rproj.user/
+
+# RStudio files
+*.Rproj
+.Rproj.user
+
+# R Environment Variables
+.Renviron
+.Rprofile
+
+# pkgdown site
+docs/
+pkgdown/
+
+# translation temp files
+po/*~
+
+# RStudio Connect folder
+rsconnect/
+
+# Mac OS
+.DS_Store
+
+# Cache directories
+*_cache/
+*_files/
+cache/
+
+# Output files (generated)
+*.html
+*.pdf
+*.docx
+
+# Data files (too large for GitHub)
+data/*.csv
+data/*.json
+!data/README.md
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# renv library
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/sandbox/
+renv/staging/
+
+# Python (if using reticulate)
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/

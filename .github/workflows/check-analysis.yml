@@ -1,0 +1,58 @@
+name: Check Analysis
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup R
+      uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: '4.3.0'
+        
+    - name: Setup R dependencies
+      uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        cache-version: 2
+        extra-packages: |
+          any::dplyr
+          any::ggplot2
+          any::readr
+          any::tidyr
+          any::purrr
+          any::coda
+          any::knitr
+          any::rmarkdown
+          
+    - name: Check R scripts syntax
+      run: |
+        Rscript -e "source('R/gibbs_hier_normal.R')"
+        
+    - name: Run sample analysis (without data)
+      run: |
+        Rscript -e "
+        # Test that functions load correctly
+        source('R/gibbs_hier_normal.R')
+        
+        # Test Gibbs sampler with dummy data
+        test_data <- list(
+          region1 = rnorm(20, 85, 5),
+          region2 = rnorm(20, 88, 5)
+        )
+        
+        result <- gibbs_hier_normal(test_data, S = 100)
+        
+        if(nrow(result\$THETA) == 100) {
+          cat('✓ Gibbs sampler test passed\n')
+        } else {
+          stop('Gibbs sampler test failed')
+        }
+        "

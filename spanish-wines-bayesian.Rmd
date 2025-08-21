@@ -1,0 +1,481 @@
+---
+title: "Comparing Spanish Wine Regions with a Bayesian Hierarchical Model"
+author: "Sam Koscelny"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: readable
+    code_folding: show
+params:
+  budget_mode: true   # true = $15–$20; false = all prices
+  seed: 1
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, 
+                      fig.width = 8, fig.height = 5, 
+                      dpi = 160, echo = TRUE)
+
+set.seed(params$seed)
+
+# Create output directories
+dir.create("figs", showWarnings = FALSE)
+dir.create("outputs", showWarnings = FALSE)
+
+# Load libraries
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(tidyr)
+library(purrr)
+library(coda)
+
+# Source custom functions
+source("R/gibbs_hier_normal.R")
+
+# Set theme for plots
+theme_set(theme_minimal(base_size = 12))
+```
+
+## 1. Overview
+
+This analysis compares critic scores across five Spanish wine regions using a **Bayesian hierarchical model** implemented via Gibbs sampling. We examine two scenarios:
+
+- **Budget Mode**: Wines priced between $15–$20 (value comparison)
+- **All Prices**: Complete dataset (overall quality comparison)
+
+### Key Questions
+
+1. Which Spanish wine regions consistently receive higher critic scores?
+2. Does the ranking change when we restrict to budget-friendly wines?
+3. How much variation in scores is attributable to region vs. individual bottles?
+
+---
+
+## 2. Data Processing
+
+### Load and Filter Data
+
+```{r data-load}
+# Note: Update this path to your actual data location
+data_path <- "data/winemag-data-130k-v2.csv"
+
+# Check if file exists
+if (!file.exists(data_path)) {
+  stop("Data file not found. Please download from Kaggle and place in data/ folder")
+}
+
+wine <- read_csv(data_path, show_col_types = FALSE, guess_max = 10000)
+
+# Focus on five major Spanish wine regions
+regions_keep <- c("Rioja", "Jerez", "Utiel-Requena", 
+                  "Ribera del Duero", "Rías Baixas")
+
+wine_es <- wine %>%
+  filter(country == "Spain", 
+         region_1 %in% regions_keep) %>%
+  dplyr::select(region_1, variety, price, points) %>%
+  mutate(region_1 = factor(region_1, levels = regions_keep))
+
+# Apply price filter if in budget mode
+if (params$budget_mode) {
+  wine_es <- wine_es %>% 
+    filter(between(price, 15, 20))
+  cat("Budget Mode: Filtering to $15-$20 wines\n")
+} else {
+  cat("All Prices Mode: Using complete dataset\n")
+}
+
+cat("Total wines in analysis:", nrow(wine_es), "\n")
+```
+
+### Prepare Data by Region
+
+```{r data-prep}
+# Define signature varieties for each region
+signature_variety <- list(
+  "Rioja" = "Tempranillo Blend",
+  "Jerez" = "Sherry",
+  "Ribera del Duero" = "Tempranillo",
+  "Rías Baixas" = "Albariño"
+  # Note: Utiel-Requena doesn't have a dominant variety
+)
+
+# Split data by region
+split_list <- split(wine_es, wine_es$region_1)
+
+# Debug: Check what regions we have
+cat("Regions found in data:", paste(names(split_list), collapse=", "), "\n")
+cat("Number of wines per region:", sapply(split_list, nrow), "\n")
+
+# Extract points for each region, focusing on signature varieties
+Y <- map2(split_list, names(split_list), function(df, nm) {
+  if (nm %in% names(signature_variety)) {
+    pts <- df %>% 
+      filter(variety == signature_variety[[nm]]) %>% 
+      pull(points)
+    # Fall back to all varieties if no signature variety found
+    if (length(pts) == 0) pts <- df$points
+    pts
+  } else {
+    df$points  # Use all varieties for regions without signature
+  }
+})
+
+# Remove any empty regions
+Y <- Y[sapply(Y, length) > 0]
+
+if (length(Y) == 0) {
+  stop("No data found for any regions. Check region names and filters.")
+}
+
+# Summary statistics
+counts_tbl <- tibble(
+  Region = names(Y),
+  `Sample Size` = sapply(Y, length),
+  `Mean Score` = round(sapply(Y, function(x) mean(x, na.rm = TRUE)), 2),
+  `SD` = round(sapply(Y, function(x) sd(x, na.rm = TRUE)), 2)
+)
+
+knitr::kable(counts_tbl, caption = "Summary Statistics by Region")
+```
+
+---
+
+## 3. Exploratory Data Analysis
+
+### Distribution of Scores by Region
+
+```{r eda-boxplot}
+p_box <- ggplot(wine_es, aes(x = region_1, y = points, fill = region_1)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 21, outlier.alpha = 0.5) +
+  geom_jitter(width = 0.15, alpha = 0.2, size = 0.8) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(x = "Region", 
+       y = "Critic Score",
+       title = paste0("Wine Scores by Spanish Region ",
+                      "(", if(params$budget_mode) "$15-$20" else "All Prices", ")"),
+       subtitle = "Points show individual wines, boxes show quartiles") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_box)
+
+# Save plot
+ggsave(filename = file.path("figs", 
+                            paste0("boxplot_", 
+                                   if(params$budget_mode) "budget" else "all", 
+                                   ".png")),
+       plot = p_box, width = 8, height = 5, dpi = 160)
+```
+
+### Score Distributions
+
+```{r eda-density}
+p_density <- wine_es %>%
+  ggplot(aes(x = points, fill = region_1)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~ region_1, ncol = 2, scales = "free_y") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(x = "Critic Score", 
+       y = "Density",
+       title = "Distribution of Scores by Region") +
+  theme(legend.position = "none")
+
+print(p_density)
+```
+
+---
+
+## 4. Bayesian Hierarchical Model
+
+### Model Specification
+
+We model critic scores using a hierarchical structure:
+
+$$\begin{aligned}
+y_{ij} \mid \theta_j, \sigma^2 &\sim \mathcal{N}(\theta_j, \sigma^2) \quad \text{(scores within region)} \\
+\theta_j \mid \mu, \tau^2 &\sim \mathcal{N}(\mu, \tau^2) \quad \text{(region means)} \\
+\end{aligned}$$
+
+With priors:
+- $\mu \sim \mathcal{N}(88.5, 1000)$ (grand mean)
+- $\sigma^2 \sim \text{Inv-Gamma}(0.5, 5)$ (within-region variance)
+- $\tau^2 \sim \text{Inv-Gamma}(0.5, 5)$ (between-region variance)
+
+### Fit Model via Gibbs Sampling
+
+```{r model-fit, cache=TRUE}
+# Check that we have data
+if (!exists("Y") || length(Y) == 0) {
+  stop("No data available for model fitting. Check data preparation step.")
+}
+
+cat("Number of regions:", length(Y), "\n")
+cat("Sample sizes:", sapply(Y, length), "\n")
+
+# Set priors (weakly informative)
+priors <- list(
+  mu0 = 88.5,   # Prior mean (typical wine score)
+  g0sq = 1000,  # Prior variance on mu (diffuse)
+  nu0 = 1,      # Prior df for sigma2
+  s0 = 10,      # Prior scale for sigma2
+  eta0 = 1,     # Prior df for tau2
+  t0 = 10       # Prior scale for tau2
+)
+
+# Run Gibbs sampler
+cat("Running Gibbs sampler with", 5000, "iterations...\n")
+fit <- gibbs_hier_normal(Y, priors = priors, S = 5000, seed = params$seed)
+
+THETA <- fit$THETA
+MST   <- fit$MST
+post  <- fit$post
+
+cat("Sampling complete.\n")
+cat("MCMC dimensions: ", dim(MST), "\n")
+```
+
+---
+
+## 5. MCMC Diagnostics
+
+### Effective Sample Sizes
+
+```{r diagnostics-ess}
+# Note: Effective sample size calculation
+if (exists("MST") && !is.null(MST) && nrow(MST) > 0) {
+  cat("Total MCMC iterations:", nrow(MST), "\n")
+  cat("Parameters tracked: μ, σ², τ²\n")
+  cat("Note: For detailed ESS, run effectiveSize(MST) manually after knitting.\n")
+} else {
+  cat("MCMC not yet run or no data available.\n")
+}
+```
+
+### Trace Plots
+
+```{r diagnostics-trace, fig.height=7}
+if (exists("MST") && !is.null(MST) && nrow(MST) > 0) {
+  par(mfrow = c(3, 1), mar = c(3, 4, 2, 1))
+  
+  # Mu
+  plot(MST[, "mu"], type = "l", col = "darkblue",
+       main = "Trace Plot: μ (Grand Mean)", 
+       ylab = "μ", xlab = "Iteration")
+  
+  # Sigma2
+  plot(MST[, "sigma2"], type = "l", col = "darkgreen",
+       main = "Trace Plot: σ² (Within-Region Variance)", 
+       ylab = "σ²", xlab = "Iteration")
+  
+  # Tau2
+  plot(MST[, "tau2"], type = "l", col = "darkred",
+       main = "Trace Plot: τ² (Between-Region Variance)", 
+       ylab = "τ²", xlab = "Iteration")
+  
+  par(mfrow = c(1, 1))
+} else {
+  cat("MCMC data not available for trace plots.\n")
+}
+```
+
+### Autocorrelation Functions
+
+```{r diagnostics-acf, fig.height=3}
+if (exists("MST") && !is.null(MST) && nrow(MST) > 0) {
+  # Save ACF plots
+  par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+  
+  acf(MST[, "mu"], main = "ACF: μ")
+  acf(MST[, "sigma2"], main = "ACF: σ²")
+  acf(MST[, "tau2"], main = "ACF: τ²")
+  
+  par(mfrow = c(1, 1))
+} else {
+  cat("MCMC data not available for ACF plots.\n")
+}
+```
+
+---
+
+## 6. Posterior Inference
+
+### Region-Specific Means
+
+```{r posterior-regions}
+# Calculate posterior summaries
+post_theta <- apply(THETA, 2, mean)
+ci_theta   <- apply(THETA, 2, quantile, probs = c(0.025, 0.5, 0.975)) %>% 
+  t() %>% 
+  as.data.frame()
+
+ci_theta$region <- rownames(ci_theta)
+names(ci_theta) <- c("Lower95", "Median", "Upper95", "Region")
+
+# Create summary table
+theta_tbl <- ci_theta %>%
+  dplyr::select(Region, Lower95, Median, Upper95) %>%
+  mutate(across(where(is.numeric), ~round(., 2))) %>%
+  arrange(desc(Median))
+
+knitr::kable(theta_tbl, 
+             caption = "Posterior Estimates of Region Means (95% Credible Intervals)")
+
+# Save to CSV
+write_csv(theta_tbl, 
+          file.path("outputs", 
+                    paste0("posterior_region_means_",
+                           if(params$budget_mode) "budget" else "all",
+                           ".csv")))
+```
+
+### Forest Plot
+
+```{r posterior-forest}
+p_forest <- ggplot(theta_tbl, aes(x = reorder(Region, Median), y = Median)) +
+  geom_point(size = 3, color = "darkblue") +
+  geom_errorbar(aes(ymin = Lower95, ymax = Upper95), 
+                width = 0.2, color = "darkblue", size = 0.8) +
+  geom_hline(yintercept = mean(MST[, "mu"]), 
+             linetype = "dashed", alpha = 0.5) +
+  coord_flip() +
+  labs(x = "Region", 
+       y = "Posterior Mean Score (95% CI)",
+       title = paste0("Region Rankings ",
+                      "(", if(params$budget_mode) "Budget" else "All Prices", ")"),
+       subtitle = "Dashed line shows grand mean") +
+  theme(panel.grid.major.y = element_blank())
+
+print(p_forest)
+
+# Save plot
+ggsave(file.path("figs", 
+                 paste0("forest_", 
+                        if(params$budget_mode) "budget" else "all", 
+                        ".png")),
+       p_forest, width = 7, height = 5, dpi = 160)
+```
+
+### Global Parameters
+
+```{r posterior-global}
+# Posterior summaries for global parameters
+global_summary <- data.frame(
+  Parameter = c("μ (Grand Mean)", 
+                "σ² (Within-Region Var)", 
+                "τ² (Between-Region Var)"),
+  Mean = c(mean(MST[, "mu"]), 
+           mean(MST[, "sigma2"]), 
+           mean(MST[, "tau2"])),
+  `CI_2.5%` = c(quantile(MST[, "mu"], 0.025),
+                quantile(MST[, "sigma2"], 0.025),
+                quantile(MST[, "tau2"], 0.025)),
+  `CI_97.5%` = c(quantile(MST[, "mu"], 0.975),
+                 quantile(MST[, "sigma2"], 0.975),
+                 quantile(MST[, "tau2"], 0.975))
+) %>%
+  mutate(across(where(is.numeric), ~round(., 2)))
+
+knitr::kable(global_summary, 
+             caption = "Posterior Estimates of Global Parameters")
+```
+
+---
+
+## 7. Variance Decomposition
+
+### Between vs. Within Region Variation
+
+```{r variance-decomp}
+# Calculate R = tau² / (tau² + sigma²)
+R_post <- post$tau2 / (post$tau2 + post$sigma2)
+R_summary <- quantile(R_post, c(0.025, 0.5, 0.975))
+
+cat("Proportion of variance due to region (R):\n")
+cat(sprintf("  Median: %.1f%%\n", 100 * R_summary[2]))
+cat(sprintf("  95%% CI: [%.1f%%, %.1f%%]\n", 
+            100 * R_summary[1], 100 * R_summary[3]))
+
+# Plot density
+p_R <- data.frame(R = R_post) %>%
+  ggplot(aes(x = R)) +
+  geom_density(fill = "steelblue", alpha = 0.7) +
+  geom_vline(xintercept = R_summary[2], 
+             linetype = "dashed", size = 1) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(x = "Proportion of Variance Due to Region (R)",
+       y = "Posterior Density",
+       title = "Variance Decomposition",
+       subtitle = paste0("Median = ", round(100 * R_summary[2], 1), "%")) +
+  theme_minimal()
+
+print(p_R)
+
+# Save plot
+ggsave(file.path("figs", 
+                 paste0("R_density_", 
+                        if(params$budget_mode) "budget" else "all", 
+                        ".png")),
+       p_R, width = 6, height = 4, dpi = 160)
+```
+
+---
+
+## 8. Key Findings
+
+```{r findings, echo=FALSE}
+top_region <- theta_tbl$Region[1]
+bottom_region <- theta_tbl$Region[nrow(theta_tbl)]
+R_pct <- round(100 * R_summary[2], 1)
+```
+
+### Main Results
+
+1. **Top Region**: **`r top_region`** has the highest posterior mean score (`r theta_tbl$Median[1]`)
+
+2. **Regional Differences**: Approximately **`r R_pct`%** of score variation is attributable to region (vs. individual bottle variation)
+
+3. **Price Context**: This analysis uses `r if(params$budget_mode) "budget wines ($15-$20)" else "all price points"`
+
+### Statistical Interpretation
+
+- The 95% credible intervals show which regions are statistically distinguishable
+- Overlapping intervals suggest regions with similar quality distributions
+- The relatively `r if(R_pct > 15) "high" else "modest"` between-region variance (`r R_pct`%) indicates `r if(R_pct > 15) "substantial regional effects" else "that individual bottle variation dominates"`
+
+---
+
+## 9. Reproducibility
+
+### Session Info
+
+```{r session-info}
+sessionInfo()
+```
+
+### To Reproduce This Analysis
+
+1. Install required packages:
+```r
+install.packages(c("dplyr", "ggplot2", "readr", 
+                   "tidyr", "purrr", "coda", "knitr"))
+```
+
+2. Run with different parameters:
+```r
+# Budget mode
+rmarkdown::render('spanish-wines-bayesian.Rmd', 
+                  params = list(budget_mode = TRUE, seed = 1))
+
+# All prices
+rmarkdown::render('spanish-wines-bayesian.Rmd', 
+                  params = list(budget_mode = FALSE, seed = 1))
+```
+
+---
+
+*Analysis completed on `r Sys.Date()`*
