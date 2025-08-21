@@ -84,7 +84,11 @@ rmarkdown::render('spanish-wines-bayesian.Rmd',
 
 ## 📈 Sample Results
 
-### 📊 [View Full Analysis Report (HTML)](spanish-wines-bayesian.html)
+### 📊 View Full Analysis Report
+
+**[🌐 View Interactive Report Online](https://sam-kos41.github.io/spanish-wine-bayesian/spanish-wines-bayesian.html)** *(via GitHub Pages)*  
+**[💾 Download HTML Report](https://github.com/sam-kos41/spanish-wine-bayesian/raw/main/spanish-wines-bayesian.html)** *(3.4 MB - view locally)*
+
 The complete analysis is available as an interactive HTML report with:
 - Full methodology and code
 - Interactive plots and tables
