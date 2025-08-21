@@ -33,10 +33,11 @@ rsconnect/
 *_files/
 cache/
 
-# Output files (generated)
-*.html
+# Output files (generated) - but keeping the main analysis HTML
 *.pdf
 *.docx
+# Keep the main analysis HTML report for GitHub viewing
+!spanish-wines-bayesian.html
 
 # Data files (too large for GitHub)
 data/*.csv

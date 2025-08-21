@@ -41,14 +41,16 @@ With weakly informative priors on hyperparameters.
 ## 🗂 Repository Structure
 
 ```
-Bayesian R code/
+spanish-wine-bayesian/
+├── spanish-wines-bayesian.html   # 📊 Complete analysis report (view this!)
+├── spanish-wines-bayesian.Rmd    # Source R Markdown document
 ├── R/
 │   └── gibbs_hier_normal.R       # Reusable Gibbs sampler function
 ├── data/
 │   └── winemag-data-130k-v2.csv  # Wine dataset (user must add)
 ├── figs/                          # Auto-generated plots
 ├── outputs/                       # Auto-generated tables (CSV)
-├── spanish-wines-bayesian.Rmd    # Main analysis document
+├── requirements.R                 # Package dependencies
 └── README.md                      # This file
 ```
 
@@ -82,14 +84,24 @@ rmarkdown::render('spanish-wines-bayesian.Rmd',
 
 ## 📈 Sample Results
 
+### 📊 [View Full Analysis Report (HTML)](spanish-wines-bayesian.html)
+The complete analysis is available as an interactive HTML report with:
+- Full methodology and code
+- Interactive plots and tables
+- Detailed MCMC diagnostics
+- Step-by-step Bayesian modeling explanation
+
+### Generated Outputs
+
 The analysis produces:
 
 - **Forest plots** comparing region means with uncertainty
 - **Density plots** of posterior distributions
 - **Variance decomposition** showing regional effects
 - **CSV tables** of posterior summaries
+- **Interactive HTML report** with complete analysis
 
-All outputs are automatically saved to `figs/` and `outputs/` directories.
+All outputs are automatically saved to `figs/`, `outputs/`, and the main directory.
 
 ## 🔧 Technical Highlights
 
